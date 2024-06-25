@@ -1,15 +1,15 @@
 http:
   routers:
     traefik:
-      rule: "Host(`traefik.authinator.io`)"
+      rule: "Host(`traefik.hygen.vn`)"
       entrypoints:
         - private
       service: "api@internal"
       tls:
         domains:
-          - main: "authinator.io"
+          - main: "hygen.vn"
             sans:
-              - "*.authinator.io"
+              - "*.hygen.vn"
 tls:
   certificates:
     - certFile: "/etc/certs/server.crt"
