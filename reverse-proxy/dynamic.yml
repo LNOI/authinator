@@ -1,0 +1,16 @@
+http:
+  routers:
+    traefik:
+      rule: "Host(`traefik.authinator.io`)"
+      entrypoints:
+        - private
+      service: "api@internal"
+      tls:
+        domains:
+          - main: "authinator.io"
+            sans:
+              - "*.authinator.io"
+tls:
+  certificates:
+    - certFile: "/etc/certs/server.crt"
+      keyFile: "/etc/certs/server.key"

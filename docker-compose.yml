@@ -1,0 +1,115 @@
+services:
+  reverse-proxy:
+    image: traefik:v3.0
+    container_name: authinator-rp
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Map the static configuration into the container
+      - ./reverse-proxy/static.yml:/etc/traefik/traefik.yml:ro
+      # Map the dynamic configuration into the container
+      - ./reverse-proxy/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      # Map the certificats into the container
+      - ./certs:/etc/certs:ro
+    command:
+      - "--accesslog=true"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.scheme=https"
+      - "traefik.http.serverstransports.mytransport.servername=traefik.authinator.io"
+      - "traefik.http.serverstransports.mytransport.insecureskipverify=true"
+      - "traefik.http.services.authinator-rp.loadbalancer.server.port=443"
+      - "traefik.http.services.authinator-rp.loadbalancer.server.scheme=https"
+      - "traefik.http.services.authinator-rp.loadbalancer.serversTransport=mytransport"
+      - "traefik.http.routers.authinator-rp.tls=true"
+      - "traefik.http.routers.authinator-rp.rule=host(`authinator.io`) || HostRegexp(`{subdomain:[a-z0-9-]+}.authinator.io`)"
+      - "traefik.http.routers.authinator-rp.entrypoints=https"
+      - "traefik.http.routers.authinator-rp.service=authinator-rp"
+      - "traefik.http.services.authinator-rp-priv.loadbalancer.server.port=9443"
+      - "traefik.http.services.authinator-rp-priv.loadbalancer.server.scheme=https"
+      - "traefik.http.services.authinator-rp-priv.loadbalancer.serversTransport=mytransport"
+      - "traefik.http.routers.authinator-rp-priv.tls=true"
+      - "traefik.http.routers.authinator-rp-priv.rule=host(`authinator.io`) || HostRegexp(`{subdomain:[a-z0-9-]+}.authinator.io`)"
+      - "traefik.http.routers.authinator-rp-priv.entrypoints=private"
+      - "traefik.http.routers.authinator-rp-priv.service=authinator-rp-priv"
+      - "traefik.docker.network=authinator_public"
+      - "rp-target=main-lb"
+    networks:
+      - authinator_public
+      - authinator_keycloak
+      - authinator_opa
+  keycloak-database:
+      image: postgres:14
+      container_name: authinator-db
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+      environment:
+        POSTGRES_DB: keycloak-db
+        POSTGRES_USER: keycloak
+        POSTGRES_PASSWORD: wieBeu1Kohk2eeBiez6qui8eekohtaht
+      networks:
+        - authinator_keycloak
+  keycloak:
+      container_name: authinator-sso
+      volumes:
+        - "./certs:/certs"
+        - "./keycloak/themes:/opt/keycloak/themes"
+      build:
+        context: keycloak
+        dockerfile: Dockerfile
+      environment:
+        KEYCLOAK_ADMIN: admin
+        KEYCLOAK_ADMIN_PASSWORD: yah7Vup7ixeePhueph7aewee2UeXaid2
+      depends_on:
+        - keycloak-database
+      command:
+        - start
+        - "--optimized"
+        - "--https-certificate-file=/certs/server.pem"
+        - "--https-certificate-key-file=/certs/server.pem"
+        - "--http-enabled=true"
+        - "--proxy=edge"
+        - "--hostname-admin-url=https://sso.authinator.io:9443/"
+        - "--spi-theme-static-max-age=-1"
+        - "--spi-theme-cache-themes=false"
+        - "--spi-theme-cache-templates=false"
+      labels:
+        - "rp-target=authinator-lb"
+        - "traefik.enable=true"
+        - "traefik.scheme=https"
+        - "traefik.http.services.kc.loadbalancer.server.port=8080"
+        - "traefik.http.routers.kcpriv.tls=true"
+        - "traefik.http.routers.kcpriv.rule=host(`sso.authinator.io`)"
+        - "traefik.http.routers.kcpriv.entrypoints=private"
+        - "traefik.http.routers.kcpriv.service=kc"
+        - "traefik.http.routers.kcpriv.priority=100"
+
+        - "traefik.http.routers.kc.tls=true"
+        - "traefik.http.routers.kc.entrypoints=https"
+        - "traefik.http.routers.kc.rule=host(`sso.authinator.io`) && (PathPrefix(`/js`) || PathPrefix(`/resources`) || PathPrefix(`/realms`))"
+        - "traefik.http.routers.kc.service=kc"
+        - "traefik.http.routers.kc.priority=50"
+        - "traefik.docker.network=authinator_keycloak"
+      networks:
+        - authinator_keycloak
+
+
+networks:
+  authinator_public:
+    external: true
+  authinator_keycloak:
+    name: authinator_keycloak
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.100.0.16/28
+  authinator_opa:
+    name: authinator_opa
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.100.0.32/28
+volumes:
+  postgres_data:
